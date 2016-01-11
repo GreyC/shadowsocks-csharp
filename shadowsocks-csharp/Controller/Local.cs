@@ -286,11 +286,11 @@ namespace Shadowsocks.Controller
 
             if (data.Length > 8)
             {
-                if (data[0] == 22 && data[1] == 3 && (data[2] >= 0 && data[2] <= 3) )
-                {
-                    protocol = Protocol.TLS;
-                    return;
-                }
+                //if (data[0] == 22 && data[1] == 3 && (data[2] >= 0 && data[2] <= 3) )
+                //{
+                //    protocol = Protocol.TLS;
+                //    return;
+                //}
                 if (data[0] == 'G' && data[1] == 'E' && data[2] == 'T' && data[3] == ' '
                     || data[0] == 'P' && data[1] == 'U' && data[2] == 'T' && data[3] == ' '
                     || data[0] == 'H' && data[1] == 'E' && data[2] == 'A' && data[3] == 'D' && data[4] == ' '
@@ -406,7 +406,7 @@ namespace Shadowsocks.Controller
         // http proxy
         public string authUser;
         public string authPass;
-        protected HttpProxyState httpProxyState;
+        protected HttpPraser httpProxyState;
         // connection receive buffer
         protected byte[] connetionRecvBuffer = new byte[RecvSize * 4];
         // connection send buffer
@@ -1246,9 +1246,19 @@ namespace Shadowsocks.Controller
         private void RspHttpHandshakeReceive()
         {
             command = 1; // Set TCP connect command
-            httpProxyState = new HttpProxyState();
-            httpProxyState.httpAuthUser = authUser;
-            httpProxyState.httpAuthPass = authPass;
+            if (httpProxyState == null)
+            {
+                httpProxyState = new HttpPraser();
+            }
+            if (Util.Utils.isMatchSubNet(((IPEndPoint)connection.RemoteEndPoint).Address, "127.0.0.0/8"))
+            {
+                httpProxyState.httpAuthUser = "";
+            }
+            else
+            {
+                httpProxyState.httpAuthUser = authUser;
+                httpProxyState.httpAuthPass = authPass;
+            }
             int err = httpProxyState.HandshakeReceive(_firstPacket, _firstPacketLength, ref remoteHeaderSendBuffer);
             if (err == 1)
             {
@@ -1257,16 +1267,7 @@ namespace Shadowsocks.Controller
             }
             else if (err == 2)
             {
-                string dataSend = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"RRR\"\r\n\r\n";
-                dataSend += "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN" +
-                            " \"http://www.w3.org/TR/1999/REC-html401-19991224/loose.dtd\">" +
-                            "<HTML>" +
-                            "  <HEAD>" +
-                            "    <TITLE>Error</TITLE>" +
-                            "    <META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=ISO-8859-1\">" +
-                            "  </HEAD>" +
-                            "  <BODY><H1>407 Proxy Authentication Required.</H1></BODY>" +
-                            "</HTML>";
+                string dataSend = httpProxyState.Http407();
                 byte[] httpData = System.Text.Encoding.UTF8.GetBytes(dataSend);
                 connection.BeginSend(httpData, 0, httpData.Length, 0, new AsyncCallback(HttpHandshakeAuthEndSend), null);
             }
@@ -1280,7 +1281,7 @@ namespace Shadowsocks.Controller
             }
             else if (err == 0)
             {
-                string dataSend = "HTTP/1.1 200 Connection Established\r\n\r\n";
+                string dataSend = httpProxyState.Http200();
                 byte[] httpData = System.Text.Encoding.UTF8.GetBytes(dataSend);
                 connection.BeginSend(httpData, 0, httpData.Length, 0, new AsyncCallback(StartConnect), null);
             }
@@ -2089,13 +2090,14 @@ namespace Shadowsocks.Controller
                     else if (httpProxyState != null)
                     {
                         detector.OnSend(remoteHeaderSendBuffer, remoteHeaderSendBuffer.Length);
-                        RemoteSend(remoteHeaderSendBuffer, remoteHeaderSendBuffer.Length);
                         if (remoteHeaderSendBuffer != null)
                         {
                             byte[] data = new byte[remoteHeaderSendBuffer.Length];
                             Array.Copy(remoteHeaderSendBuffer, data, data.Length);
                             connectionSendBufferList.Add(data);
+                            RemoteSend(remoteHeaderSendBuffer, remoteHeaderSendBuffer.Length);
                         }
+
                         //if (httpProxyState.httpProxy)
                         //{
                         //    byte[] buffer = new byte[0];
@@ -2109,8 +2111,9 @@ namespace Shadowsocks.Controller
                         //        connectionSendBufferList.Add(data);
                         //    }
                         //}
+
                         remoteHeaderSendBuffer = null;
-                        if (!httpProxyState.httpProxy)
+                        //if (!httpProxyState.httpProxy)
                         {
                             httpProxyState = null;
                         }

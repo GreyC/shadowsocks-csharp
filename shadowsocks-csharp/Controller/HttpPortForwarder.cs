@@ -35,7 +35,7 @@ namespace Shadowsocks.Controller
             private bool _localShutdown = false;
             private bool _remoteShutdown = false;
             private Configuration _config;
-            HttpProxyState httpProxyState;
+            HttpPraser httpProxyState;
             public const int RecvSize = 16384;
             // remote receive buffer
             private byte[] remoteRecvBuffer = new byte[RecvSize];
@@ -49,7 +49,7 @@ namespace Shadowsocks.Controller
                 this._local = socket;
                 this._targetPort = targetPort;
                 this._config = config;
-                if ((_config.authUser ?? "").Length == 0)
+                if ((_config.authUser ?? "").Length == 0 || Util.Utils.isMatchSubNet(((IPEndPoint)this._local.RemoteEndPoint).Address, "127.0.0.0/8"))
                 {
                     Connect();
                 }
@@ -60,7 +60,10 @@ namespace Shadowsocks.Controller
             }
             private void RspHttpHandshakeReceive()
             {
-                httpProxyState = new HttpProxyState(true);
+                if (httpProxyState == null)
+                {
+                    httpProxyState = new HttpPraser(true);
+                }
                 httpProxyState.httpAuthUser = _config.authUser;
                 httpProxyState.httpAuthPass = _config.authPass;
                 byte[] remoteHeaderSendBuffer = null;
@@ -72,16 +75,7 @@ namespace Shadowsocks.Controller
                 }
                 else if (err == 2)
                 {
-                    string dataSend = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"RRR\"\r\n\r\n";
-                    dataSend += "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN" +
-                                " \"http://www.w3.org/TR/1999/REC-html401-19991224/loose.dtd\">" +
-                                "<HTML>" +
-                                "  <HEAD>" +
-                                "    <TITLE>Error</TITLE>" +
-                                "    <META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=ISO-8859-1\">" +
-                                "  </HEAD>" +
-                                "  <BODY><H1>407 Proxy Authentication Required.</H1></BODY>" +
-                                "</HTML>";
+                    string dataSend = httpProxyState.Http407();
                     byte[] httpData = System.Text.Encoding.UTF8.GetBytes(dataSend);
                     _local.BeginSend(httpData, 0, httpData.Length, 0, new AsyncCallback(HttpHandshakeAuthEndSend), null);
                 }
@@ -95,7 +89,7 @@ namespace Shadowsocks.Controller
                 }
                 else if (err == 0)
                 {
-                    string dataSend = "HTTP/1.1 200 Connection Established\r\n\r\n";
+                    string dataSend = httpProxyState.Http200();
                     byte[] httpData = System.Text.Encoding.UTF8.GetBytes(dataSend);
                     _local.BeginSend(httpData, 0, httpData.Length, 0, new AsyncCallback(StartConnect), null);
                 }
